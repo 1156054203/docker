@@ -1,0 +1,57 @@
+FROM ubuntu:focal-20200703@sha256:d5a6519d9f048100123c568eb83f7ef5bfcad69b01424f420f17c932b00dea76
+MAINTAINER chenyulong@sibcb.ac.cn
+ARG NB_USER="chenyulong"  
+ARG NB_UID="2666"
+ARG NB_GID="100"
+ENV HOME=/home/$NB_USER
+
+# Fix DL4006
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+USER root
+ENV DEBIAN_FRONTEND noninteractive
+
+# install latex
+RUN apt-get update \
+ && apt-get install -yq --no-install-recommends \
+    tini \
+    wget \
+    bzip2 \
+    ca-certificates \
+    sudo \
+    locales \
+    fonts-liberation \
+    run-one \
+ && apt-get install -y texlive texlive-science latex-cjk-chinese \
+ && apt-get clean && rm -rf /var/lib/apt/lists/* \
+ && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
+    locale-gen
+
+# Enable prompt color in the skeleton .bashrc before creating the default user
+RUN sed -i 's/^#force_color_prompt=yes/force_color_prompt=yes/' /etc/skel/.bashrc
+
+# Create user with name 'chenyulong' user with UID=1000 and in the 'users' group
+# and make sure these dirs are writable by the `users` group.
+RUN echo "auth requisite pam_deny.so" >> /etc/pam.d/su && \
+    sed -i.bak -e 's/^%admin/#%admin/' /etc/sudoers && \
+    sed -i.bak -e 's/^%sudo/#%sudo/' /etc/sudoers && \
+    useradd -m -s /bin/bash -N -u $NB_UID $NB_USER && \
+    chmod g+w /etc/passwd
+
+# Fix permissions on directory as root
+COPY fix-permissions /usr/local/bin/
+RUN chmod a+rx /usr/local/bin/fix-permissions && \
+    fix-permissions $HOME
+
+# Configure default port 8888
+EXPOSE 8888
+
+# Switch back to 'chenyulong' to avoid accidental container runs as root
+USER $NB_USER
+
+# work in 'chenyulong' home
+WORKDIR $HOME
+
+# Configure container startup cmd
+ENTRYPOINT ["/usr/bin/tini","-g","--"]
+CMD ["pdflatex"]
